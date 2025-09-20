@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+
+    environment {
+        // Replace with your Docker Hub username and image name
+        DOCKER_HUB_REPO = 'khalticloning'
+        // Tag the image with the build number or a Git commit hash
+        IMAGE_TAG = sh(returnStdout: true, script: 'echo ${BUILD_NUMBER}').trim()
+        // Or for a Git commit hash:
+        // IMAGE_TAG = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Arjun-Adhikari/docker.git' // Replace with your repo URL and main branch name
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Build the Docker image using the Dockerfile in the root directory
+                    docker.build("${DOCKER_HUB_REPO}:${IMAGE_TAG}", "-f Dockerfile .")
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    // Get Docker Hub credentials from Jenkins
+                    withDockerRegistry(credentialsId: 'docker-hub-credentials', url: 'https://index.docker.io/v1/') {
+                        // Push the tagged image to Docker Hub
+                        docker.image("${DOCKER_HUB_REPO}:${IMAGE_TAG}").push()
+                        // Optionally, also push as 'latest'
+                        docker.image("${DOCKER_HUB_REPO}:${IMAGE_TAG}").push("latest")
+                    }
+                }
+            }
+        }
+
+        stage('Clean Up') {
+            steps {
+                script {
+                    // Remove the local Docker image to free up space (optional)
+                    sh "docker rmi ${DOCKER_HUB_REPO}:${IMAGE_TAG} || true"
+                    sh "docker rmi ${DOCKER_HUB_REPO}:latest || true"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Clean workspace after build
+            cleanWs()
+        }
+        success {
+            echo 'Pipeline finished successfully!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
+}
